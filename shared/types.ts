@@ -13,7 +13,7 @@ export interface Requirement { term: string; sourceQuote: string; importance: 'r
 export interface Analysis { summary: string; edits: Edit[]; requirements: Requirement[]; gaps: string[]; warnings: string[]; reuseSuggestion: { resumeId: string; reason: string } | null }
 export type JobStatus = 'Draft' | 'Applied' | 'Interviewing' | 'Offer' | 'Closed';
 export interface JobInput { company: string; role: string; description: string; url: string; instructions: string }
-export interface Job extends JobInput { id: string; resumeId: string | null; status: JobStatus; createdAt: string; analysis: Analysis | null }
+export interface Job extends JobInput { id: string; resumeId: string | null; status: JobStatus; createdAt: string; analysis: Analysis | null; evidenceSnapshot?: Evidence[] }
 export interface PdfResult { status: 'ready' | 'unavailable' | 'failed' | 'overflow'; pages: number | null; message: string; warnings: string[] }
 export interface Resume { id: string; name: string; createdAt: string; kind: 'original' | 'tailored'; templateId: string; templateHash: string; templateSnapshot: ResumeTemplate; profileSnapshot: Profile; latex: string; analysis: Analysis | null; pdf: PdfResult; model: string | null }
 export interface Settings { model: string; apiKeyConfigured: boolean; keySource: 'environment' | 'local' | 'none'; templatePath: string; privacyMode: boolean }

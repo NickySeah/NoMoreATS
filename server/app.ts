@@ -1,15 +1,15 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
 import { randomUUID } from 'node:crypto';
-import { access, readFile } from 'node:fs/promises';
-import { basename, extname, resolve } from 'node:path';
+import { access, readFile, rm } from 'node:fs/promises';
+import { basename, dirname, extname, resolve } from 'node:path';
 import { z, ZodError } from 'zod';
-import type { Analysis, Job, JobInput, Resume, ResumeTemplate } from '../shared/types';
+import type { Analysis, Job, JobInput, PdfResult, Resume, ResumeTemplate } from '../shared/types';
 import { getEvidence } from '../shared/evidence';
 import { Store } from './store';
 import { jobInputSchema, profileSchema, settingsSchema } from './validation';
 import { extractTemplate, renderTemplate } from './template';
 import { isResumeReusable, listModels, tailorWithOpenRouter, validateAnalysis } from './ai';
-import { artifactPath, compilePdf } from './pdf';
+import { artifactPath, compilePdf, isOnePagePdf } from './pdf';
 import { assertTemplateFacts } from './consistency';
 
 type Generate = typeof tailorWithOpenRouter;
@@ -41,6 +41,9 @@ export function createApp(store: Store, options: { generate?: Generate; compile?
     if (!resume) throw new HttpError(404, 'Resume not found.');
     return resume;
   };
+  const requireOnePage = (pdf: PdfResult) => {
+    if (!isOnePagePdf(pdf)) throw new HttpError(422, `A resume must be verified as exactly one page before it can be saved or used. ${pdf.message}`);
+  };
   async function compileResume(id: string): Promise<Resume> {
     if (compiling.has(id)) return compiling.get(id)!;
     const original = findResume(id);
@@ -71,17 +74,20 @@ export function createApp(store: Store, options: { generate?: Generate; compile?
     assertTemplateFacts(template, store.state().profile);
     const previewId = `preview-${randomUUID()}`;
     const pdf = await compile(store.dir, previewId, source);
-    if (pdf.status === 'overflow' || pdf.status === 'failed') throw new HttpError(400, `The template failed layout validation: ${pdf.message}`);
+    requireOnePage(pdf);
     template.baselinePages = pdf.pages;
     await store.update(state => { state.template = template; if (input.path) state.settings.templatePath = input.path; });
     res.json(template);
   });
   app.post('/api/jobs', async (req, res) => {
     const input = z.object({ job: jobInputSchema, resumeId: z.string(), analysis: z.unknown().optional() }).parse(req.body);
-    const resume = findResume(input.resumeId);
+    let resume = findResume(input.resumeId);
+    if (!isOnePagePdf(resume.pdf)) resume = await compileResume(resume.id);
+    requireOnePage(resume.pdf);
     const snapshot = store.state();
-    const analysis = input.analysis === undefined ? null : validateAnalysis(input.analysis, snapshot.template, getEvidence(snapshot.profile), [resume], input.job.description);
-    const job: Job = { ...input.job, id: randomUUID(), resumeId: input.resumeId, status: 'Draft', createdAt: new Date().toISOString(), analysis };
+    const evidence = getEvidence(snapshot.profile);
+    const analysis = input.analysis === undefined ? null : validateAnalysis(input.analysis, snapshot.template, evidence, [resume], input.job.description);
+    const job: Job = { ...input.job, id: randomUUID(), resumeId: input.resumeId, status: 'Draft', createdAt: new Date().toISOString(), analysis, ...(analysis ? { evidenceSnapshot: evidence } : {}) };
     await store.update(state => { state.jobs.unshift(job); });
     res.status(201).json(job);
   });
@@ -108,20 +114,39 @@ export function createApp(store: Store, options: { generate?: Generate; compile?
     generating = true;
     try {
       const candidates = snapshot.resumes.filter(resume => isResumeReusable(resume, snapshot.template, evidence)).slice(0, 12);
-      const analysis = await generate({ key: store.key(), model: snapshot.settings.model, privacyMode: snapshot.settings.privacyMode, template: snapshot.template, evidence, candidates, job: input.job, forceNew: Boolean(input.forceNew) });
-      const job: Job = { ...input.job, id: randomUUID(), resumeId: null, status: 'Draft', createdAt: new Date().toISOString(), analysis };
+      const generation = { key: store.key(), model: snapshot.settings.model, privacyMode: snapshot.settings.privacyMode, template: snapshot.template, evidence, candidates, job: input.job, forceNew: Boolean(input.forceNew) };
+      let analysis = await generate(generation);
+      const job: Job = { ...input.job, id: randomUUID(), resumeId: null, status: 'Draft', createdAt: new Date().toISOString(), analysis, evidenceSnapshot: evidence };
       if (analysis.reuseSuggestion) {
-        const suggestedResume = candidates.find(resume => resume.id === analysis.reuseSuggestion!.resumeId)!;
+        let suggestedResume = candidates.find(resume => resume.id === analysis.reuseSuggestion!.resumeId)!;
+        if (!isOnePagePdf(suggestedResume.pdf)) suggestedResume = await compileResume(suggestedResume.id);
+        requireOnePage(suggestedResume.pdf);
         // The user confirms reuse through POST /api/jobs; no duplicate draft is saved here.
         return res.json({ resume: null, job, analysis, suggestedResume });
       }
-      const latex = renderTemplate(snapshot.template, analysis.edits);
       const id = randomUUID();
-      const pdf = await compile(store.dir, id, latex);
-      const resume: Resume = { id, name: `${input.job.company} · ${input.job.role}`, kind: 'tailored', createdAt: job.createdAt, templateId: snapshot.template.id, templateHash: snapshot.template.sourceHash, templateSnapshot: snapshot.template, profileSnapshot: snapshot.profile, latex, analysis, pdf, model: snapshot.settings.model };
-      job.resumeId = resume.id;
-      await store.update(state => { state.resumes.unshift(resume); state.jobs.unshift(job); });
-      res.status(201).json({ resume, job, analysis, suggestedResume: null });
+      let persisted = false;
+      try {
+        let latex = renderTemplate(snapshot.template, analysis.edits);
+        let pdf = await compile(store.dir, id, latex);
+        if (pdf.status === 'overflow' || (pdf.pages !== null && pdf.pages > 1) || pdf.warnings.some(warning => warning.startsWith('Overfull'))) {
+          analysis = await generate({ ...generation, candidates: [], forceNew: true, fitToOnePage: true });
+          if (analysis.reuseSuggestion) throw new HttpError(422, 'A shorter one-page version must be generated before this resume can be saved.');
+          latex = renderTemplate(snapshot.template, analysis.edits);
+          pdf = await compile(store.dir, id, latex);
+        }
+        requireOnePage(pdf);
+        job.analysis = analysis;
+        const resume: Resume = { id, name: `${input.job.company} · ${input.job.role}`, kind: 'tailored', createdAt: job.createdAt, templateId: snapshot.template.id, templateHash: snapshot.template.sourceHash, templateSnapshot: snapshot.template, profileSnapshot: snapshot.profile, latex, analysis, pdf, model: snapshot.settings.model };
+        job.resumeId = resume.id;
+        await store.update(state => { state.resumes.unshift(resume); state.jobs.unshift(job); });
+        persisted = true;
+        res.status(201).json({ resume, job, analysis, suggestedResume: null });
+      } finally {
+        const root = resolve(store.dir, 'artifacts');
+        const draft = resolve(root, id);
+        if (!persisted && dirname(draft) === root) await rm(draft, { recursive: true, force: true });
+      }
     } finally { generating = false; }
   });
   app.get('/api/resumes/:id/tex', (req, res) => { const resume = findResume(req.params.id); res.attachment(`${safeFilename(resume.name)}.tex`).type('text/plain').send(resume.latex); });
@@ -129,8 +154,8 @@ export function createApp(store: Store, options: { generate?: Generate; compile?
   app.get('/api/resumes/:id/pdf', async (req, res) => {
     let resume = findResume(req.params.id);
     const artifactExists = await access(artifactPath(store.dir, resume.id)).then(() => true, () => false);
-    if (resume.pdf.status !== 'ready' || !artifactExists) resume = await compileResume(resume.id);
-    if (resume.pdf.status !== 'ready') throw new HttpError(422, resume.pdf.message);
+    if (!isOnePagePdf(resume.pdf) || !artifactExists) resume = await compileResume(resume.id);
+    requireOnePage(resume.pdf);
     res.setHeader('Content-Disposition', `${req.query.download === '1' ? 'attachment' : 'inline'}; filename="${safeFilename(resume.name)}.pdf"`);
     res.sendFile(resolve(artifactPath(store.dir, resume.id)));
   });

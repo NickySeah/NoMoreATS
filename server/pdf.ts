@@ -4,6 +4,15 @@ import { join } from 'node:path';
 import type { PdfResult } from '../shared/types';
 
 export const artifactPath = (dataDir: string, id: string) => join(dataDir, 'artifacts', id, 'resume.pdf');
+export const isOnePagePdf = (pdf: PdfResult) => pdf.status === 'ready' && pdf.pages === 1 && !pdf.warnings.some(warning => warning.startsWith('Overfull'));
+
+export function inspectPdfLog(log: string) {
+  const pages = Number(log.match(/Output written on .+?\((\d+) pages?/)?.[1]) || null;
+  const allWarnings = [...log.matchAll(/(?:Overfull|Underfull) \\[^\n]+/g)].map(match => match[0]);
+  const overfull = allWarnings.filter(warning => warning.startsWith('Overfull'));
+  const warnings = [...overfull, ...allWarnings.filter(warning => !warning.startsWith('Overfull'))].slice(0, 20);
+  return { pages, warnings, overflow: (pages !== null && pages > 1) || overfull.length > 0 };
+}
 
 export async function compilePdf(dataDir: string, id: string, latex: string): Promise<PdfResult> {
   if (!/^[a-zA-Z0-9-]+$/.test(id)) throw new Error('Invalid artifact identifier.');
@@ -13,10 +22,9 @@ export async function compilePdf(dataDir: string, id: string, latex: string): Pr
   try {
     await run('pdflatex', ['-no-shell-escape', '-interaction=nonstopmode', '-halt-on-error', 'resume.tex'], directory, 45000);
     const log = await readFile(join(directory, 'resume.log'), 'utf8');
-    const pages = Number(log.match(/Output written on .+?\((\d+) pages?/)?.[1]) || null;
-    const warnings = [...log.matchAll(/(?:Overfull|Underfull) \\[^\n]+/g)].map(match => match[0]).slice(0, 20);
+    const { pages, warnings, overflow } = inspectPdfLog(log);
     if (pages === null) return { status: 'failed', pages, message: 'PDF was produced, but page count could not be verified.', warnings };
-    if (pages > 1 || warnings.some(warning => warning.startsWith('Overfull'))) return { status: 'overflow', pages, message: 'Text exceeds the original one-page layout. The LaTeX format is unchanged; shorten the content and generate again.', warnings };
+    if (overflow) return { status: 'overflow', pages, message: 'Text exceeds the original one-page layout. The LaTeX format is unchanged; shorten the content and generate again.', warnings };
     try {
       const text = await run('pdftotext', ['resume.pdf', '-'], directory, 10000);
       if (text.trim().length < 100) return { status: 'failed', pages, message: 'The PDF did not contain enough extractable text to verify it.', warnings };

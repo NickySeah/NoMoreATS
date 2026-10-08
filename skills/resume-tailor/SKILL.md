@@ -17,16 +17,17 @@ The job description establishes what the employer requests. Only supplied candid
 
 Extract meaningful skills, responsibilities, tools, qualifications, and domain requirements. Distinguish explicitly required criteria from preferred criteria using the posting; when unspecified, mark preferred and explain material uncertainty in warnings. Keep `sourceQuote` as an exact excerpt from the posting.
 
-For each requirement, use existing evidence IDs. Set `covered: true` only when the supplied evidence supports the criterion including any required duration, proficiency, scope, or credential. Transferable or adjacent experience may inform wording, but a partial match remains `covered: false`; explain partial support in gaps. Do not equate coordinating a short event with years of management, one technology with another, or coursework with professional tenure.
+For each requirement, use existing evidence IDs. Set `covered: true` only when the supplied evidence supports the criterion including any required duration, proficiency, scope, or credential. Transferable or adjacent experience may inform wording, but a partial match remains `covered: false`; explain partial support in gaps. Do not equate coordinating a short event with years of management, one technology with another, or coursework with professional tenure. Order requirements by relevance to the actual job, with required criteria before preferred criteria and the strongest supported matches first within each category.
 
 ## Propose edits
 
 - Edit only existing supplied slot IDs. Produce at most one edit per slot and respect each slot's `maxChars`. Omit unchanged or unhelpful edits.
 - Return replacement `text` as plain prose, without LaTeX commands, markup, braces, control characters, or line breaks. The caller handles escaping and insertion. Never return an entire resume, preamble, macro, layout change, new section, new slot, or reordered entries.
-- Preserve factual meaning, official titles, employers, dates, degree names, credentials, and metrics. Do not invent experience, tools, outcomes, certifications, proficiency, or numbers. Expand an abbreviation only when the supplied context establishes its meaning.
+- Select the strongest job-relevant facts from the FULL supplied evidence, including accomplishments and additional notes that do not appear in the original resume. Replace a less relevant accomplishment with a stronger supported one from the same role or project when useful; do not limit tailoring to synonym substitutions. Coordinate all text spans in a bullet into a coherent sentence. Preserve the truth of claims, official titles, employers, dates, degree names, credentials, and supported metrics. Do not invent experience, tools, outcomes, certifications, proficiency, or numbers. Expand an abbreviation only when the supplied context establishes its meaning.
 - Use concise action, scope, and demonstrated result where supported. Adopt relevant wording from the posting only when it describes the candidate's actual work. Repetition, hidden keywords, and generic keyword lists are not substitutes for evidence.
 - Every edit needs nonempty `evidenceIds` supporting every material claim. Evidence must belong to the supplied slot group, including technology category slots. Keep relevant skills in their existing categories. Slot context identifies attribution; it does not create missing evidence.
 - If a stronger edit cannot fit the slot or needs confirmation, keep the existing text and report the issue in `gaps` or `warnings`. Preserving structure cannot guarantee unchanged page count; longer text may wrap.
+- The final resume must fit exactly ONE page. Prioritize concise, relevant evidence rather than trying to include every fact or fill every character allowance. Shorten less relevant prose where useful; never shrink fonts, margins, or typography. The caller compiles and verifies the PDF and may request a shorter revision with reduced character budgets.
 
 ## Reuse prior wording
 
@@ -36,9 +37,9 @@ Suggest a supplied prior `resumeId` only when it is compatible with the current 
 
 Return one JSON object only, with no Markdown fences or surrounding prose:
 
-- `summary`: concise explanation of the fit and proposed emphasis.
+- `summary`: pinpoint the three to five most important supported qualifications for this job, explain the proposed emphasis and any meaningful evidence substitutions, and state any major gaps. If the current resume already contains the strongest facts, explain why changes are limited.
 - `edits`: `{slotId, text, reason, evidenceIds}` objects; explain each edit's relevant benefit.
-- `requirements`: `{term, sourceQuote, importance, evidenceIds, covered}` objects; `importance` is `required` or `preferred`.
+- `requirements`: `{term, sourceQuote, importance, evidenceIds, covered}` objects; `importance` is `required` or `preferred`. Use a concise, specific `term` such as "Python", "AWS", or "contract tests" rather than combining many alternatives or an entire sentence into one label. Preserve the full criterion, including durations or scope, in `sourceQuote`; never claim full coverage from a keyword alone.
 - `gaps`: unsupported or partially supported criteria, and specific facts worth confirming.
 - `warnings`: input ambiguity, template/extraction risks, or constraints affecting the result.
 - `reuseSuggestion`: `{resumeId, reason}` or `null`.

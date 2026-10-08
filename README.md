@@ -24,11 +24,11 @@ Then open http://127.0.0.1:3001. `npm run typecheck` and `npm test` run the chec
 
 ## Start tailoring
 
-1. Review **My profile**. It starts with the facts from `NicholasResume/main.tex`. Edits autosave after a brief pause; the status shows failures and offers Retry. Add additional factual context to the relevant experience/project's notes so the model can attribute it correctly.
+1. Review **My profile**, which opens on Experience. It starts with the facts from `NicholasResume/main.tex`. Your profile can be longer than one page: add all verified accomplishments and additional factual context to the relevant experience/project's notes so the AI can select the strongest evidence for each job. Edits autosave after a brief pause; the status shows failures and offers Retry.
 2. Review **LaTeX template**. The imported original is copied into this project; the NicholasResume directory is never modified. You can reimport `C:\Users\nicho\codingRelated\NicholasResume\main.tex` or upload a supported `.tex` file.
 3. In **Settings**, save your OpenRouter key and select a model from its live catalog, or enter an exact model ID. No model or key is supplied by the project. The catalog filters for structured-output support; routing enforces it again.
 4. Choose **Tailor a resume** and paste the company, role, full description, and optional preferences. Generation sends career evidence and job text to OpenRouter and its selected provider; it does not send contact details. Each paid request is initiated by your action.
-5. Review the PDF, changes, supporting evidence, and coverage/gaps before submitting. PDF and `.tex` downloads are available. A failed/overflowed PDF keeps its LaTeX source and explains the problem.
+5. Review **Job match & gaps**, which opens for tailored resumes and pinpoints relevant facts, distinguishing full from partial matches. Then review the PDF and edits. A generated resume is saved only after its PDF is verified as exactly one page with no overfull boxes. An overflowing draft gets one additional AI request for a shorter revision; if that still fails, the app rejects it without saving a resume or application. Missing or failed PDF compilation also blocks saving. PDF and `.tex` downloads are available for saved resumes.
 6. Review reuse suggestions, or select **Use for a job** on an existing resume. Multiple applications can share one immutable version. The library keeps each description and application status.
 
 ## Data and credentials
@@ -49,7 +49,7 @@ The renderer preserves every byte outside detected experience/project prose span
 
 Updating fixed contact details, role titles/dates, education, project headings or certifications requires updating those facts in the local `.tex` source and reimporting it. Extra profile records can be saved as evidence; an existing template cannot create new entries for them. Supported imports use Nicholas's existing typography/preamble and single-column structure. Arbitrary LaTeX packages, macros, file reads and other layouts are rejected. Each saved resume retains the template and profile it used.
 
-Text length can affect wrapping. The app compiles with no shell escape, checks the one-page limit and overfull boxes, and checks extractable PDF text when the tool is available. It reports overflow without changing spacing or font sizes.
+Text length can affect wrapping. The app compiles with no shell escape, enforces exactly one page and no overfull boxes before saving or linking a resume, and checks extractable PDF text when the tool is available. On overflow it tries one compact revision with shorter character budgets, without changing spacing or font sizes. Draft artifacts are removed if generation cannot produce a verified one-page result.
 
 ## Tailoring skill and ATS research
 

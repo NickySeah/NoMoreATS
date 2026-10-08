@@ -8,11 +8,35 @@ import { createApp } from '../server/app';
 import type { JobInput } from '../shared/types';
 import { artifactPath } from '../server/pdf';
 import { dirname } from 'node:path';
+import { getEvidence } from '../shared/evidence';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { ResumeDetail } from '../src/components/ResumeDetail';
 const dirs: string[] = [];
 afterEach(async () => { await Promise.all(dirs.splice(0).map(d => rm(d, { recursive: true, force: true }))); });
 const job: JobInput = { company: 'Example Company', role: 'Software Engineer', description: 'Build TypeScript services and AWS APIs.', url: '', instructions: '' };
-async function setup() { const dir = await mkdtemp(join(tmpdir(), 'nomoreats-api-')); dirs.push(dir); const store = await Store.open(dir); return { store, app: createApp(store) }; }
+async function setup() { const dir = await mkdtemp(join(tmpdir(), 'nomoreats-api-')); dirs.push(dir); const store = await Store.open(dir); return { store, app: createApp(store, { compile: async () => ({ status: 'ready', pages: 1, message: 'Fixture compiler', warnings: [] }) }) }; }
 describe('workspace API', () => {
+  it('keeps the current analysis evidence when linking an older resume', async () => {
+    const { store, app } = await setup();
+    const original = store.state().resumes[0];
+    const profile = store.state().profile;
+    profile.experience[0].notes = 'Built TypeScript services with contract tests.';
+    await store.saveProfile(profile);
+    const evidence = getEvidence(store.state().profile);
+    const fact = evidence.find(item => item.text === profile.experience[0].notes)!;
+    const analysis = { summary: 'TypeScript experience', edits: [], requirements: [{ term: 'TypeScript', sourceQuote: job.description, importance: 'required', covered: true, evidenceIds: [fact.id] }], gaps: [], warnings: [], reuseSuggestion: null };
+    const response = await request(app).post('/api/jobs').send({ job, resumeId: original.id, analysis });
+    expect(response.status).toBe(201);
+    expect(response.body.evidenceSnapshot).toContainEqual(fact);
+    expect(store.state().resumes[0].profileSnapshot.experience[0].notes).not.toBe(fact.text);
+    const html = renderToStaticMarkup(createElement(ResumeDetail, {
+      resume: { ...original, kind: 'tailored', analysis: response.body.analysis }, jobs: [response.body],
+      onUpdate: () => {}, onStatus: async () => {}, onClose: () => {}, onUse: () => {},
+    }));
+    expect(html).toContain(fact.text);
+    expect(html).toContain('Fully supported');
+  });
   it('links multiple job descriptions to one immutable resume', async () => {
     const { store, app } = await setup();
     const original = store.state().resumes[0];

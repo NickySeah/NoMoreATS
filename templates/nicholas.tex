@@ -1,0 +1,149 @@
+\documentclass[10pt, letterpaper]{article}
+
+% Layout: simple single-column flow for ATS and one-page density.
+\usepackage[
+    ignoreheadfoot,
+    top=1.5 cm,
+    bottom=1.9 cm,
+    left=2.0 cm,
+    right=2.0 cm,
+    footskip=0.8 cm
+]{geometry}
+
+% ATS and font encoding: preserve searchable text and Unicode mapping.
+\usepackage{iftex}
+\ifPDFTeX
+    \usepackage{cmap}
+    \input{glyphtounicode}
+    \pdfgentounicode=1
+    \usepackage[T1]{fontenc}
+    \usepackage[utf8]{inputenc}
+    \usepackage{lmodern}
+\fi
+\usepackage{charter}
+
+% Styling utilities: section formatting, compact lists, and links.
+\usepackage{titlesec}
+\usepackage[dvipsnames]{xcolor}
+\definecolor{primaryColor}{RGB}{0, 0, 0}
+\usepackage{enumitem}
+\usepackage[
+    pdftitle={Nicholas Seah Resume},
+    pdfauthor={Nicholas Seah},
+    pdfcreator={LaTeX},
+    colorlinks=true,
+    linkcolor=primaryColor,
+    urlcolor=primaryColor
+]{hyperref}
+
+\raggedright
+\pagestyle{empty}
+\setcounter{secnumdepth}{0}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0pt}
+\urlstyle{same}
+
+\titleformat{\section}
+    {\large\bfseries}
+    {}
+    {0pt}
+    {}
+    [\vspace{-0.2em}\titlerule]
+\titlespacing*{\section}{0pt}{0.7em}{0.35em}
+
+\newenvironment{resumeitemize}{
+    \begin{itemize}[
+        leftmargin=1.15em,
+        itemsep=0.12em,
+        topsep=0.12em,
+        parsep=0.04em,
+        partopsep=0pt
+    ]
+}{
+    \end{itemize}
+}
+
+\begin{document}
+
+\begin{center}
+    {\LARGE Nicholas Seah\par}
+    \vspace{0.3em}
+    Singapore \textbar{} \href{mailto:nicholasseah02@gmail.com}{nicholasseah02@gmail.com} \textbar{} \href{tel:+6597662050}{(+65) 97662050} \textbar{} \href{https://nicholasseah.netlify.app/}{nicholasseah.netlify.app} \textbar{} \href{https://linkedin.com/in/nicholasseah}{linkedin.com/in/nicholasseah} \textbar{} \href{https://github.com/NickySeah}{github.com/NickySeah}
+\end{center}
+
+% \begin{center}
+%     \textit{Seeking graduate opportunities starting April 2027.}
+% \end{center}
+
+\vspace{0.10em}
+
+\section{Education}
+
+\textbf{Singapore Management University}, Bachelor of Science (Software Engineering) \hfill Aug 2023 -- Jan 2027
+
+\begin{resumeitemize}
+    \item GPA: 3.53/4.0
+    \item \textbf{Second Major in Tech and Business (Product Development)}
+\end{resumeitemize}
+
+\section{Experience}
+
+\href{https://www.tech.gov.sg/}{\textbf{Software Engineer Intern, GovTech}} \hfill Jun 2026 -- Present
+
+\begin{resumeitemize}
+    \item Built an API observability dashboard backed by DynamoDB audit logs, surfacing request volume and p95/p99 latency metrics for data producers to monitor API usage and performance.
+    \item Developed an administrative activity-log interface backed by DynamoDB audit records, enabling administrators to trace user actions and investigate platform activity.
+    \item Designed and implemented automated KMS permission handling for AWS Glue Crawlers, removing manual key-policy configuration during encrypted S3 data-source onboarding.
+\end{resumeitemize}
+
+\href{https://www.ncs.co/en-sg/}{\textbf{Software Engineer Intern, NCS PTE. LTD.}} \hfill Dec 2025 -- Jun 2026
+
+\begin{resumeitemize}
+    \item Refactored legacy \textbf{.NET MVC} logic across inbound and outbound interfaces, reducing duplicated code paths by extracting shared validation and transformation components.
+    \item Diagnosed and resolved defects in scheduled .NET batch jobs, tracing failures across application logic and database workflows before validating fixes for production change requests.
+    \item Identified gaps in developer onboarding and created a standardized setup guide covering local configuration and dependencies for incoming developers.
+\end{resumeitemize}
+
+\section{Projects}
+
+\textbf{\href{https://github.com/JabrielHo/CS301-PegasusCRM}{PegasusCRM — CRM Platform for UBS | TypeScript, AWS Amplify, Cognito, Lambda}}
+
+\begin{resumeitemize}
+    \item Worked directly with \textbf{UBS} stakeholders to translate business requirements into technical specifications and sprint-ready engineering tasks.
+    \item Built a TypeScript frontend with AWS Amplify and generated GraphQL types, enforcing typed API contracts between UI components and backend services.
+    \item Implemented role-based API authorization using Cognito/OAuth 2.0 tokens and a Lambda authorizer that validated JWTs and user roles on each protected request.
+\end{resumeitemize}
+
+\textbf{\href{https://github.com/leandrogay/PokeSwap}{PokeSwap — Event-Driven Microservices Marketplace | RabbitMQ, Docker, Kong}}
+
+\begin{resumeitemize}
+    \item Architected RabbitMQ-based asynchronous messaging across 4 microservices and validated the workflow under simulations of 50+ concurrent card transfers.
+    \item Containerized the microservice stack with Docker Compose and configured Kong API Gateway for centralized routing and CORS across service endpoints.
+\end{resumeitemize}
+
+\textbf{\href{https://github.com/NickySeah/DutyNotFree}{DutyNotFree — Full-Stack Application | Spring Boot, JWT, MySQL}}
+
+\begin{resumeitemize}
+    \item Led Agile delivery for a 5-member engineering team, coordinating sprint planning, task ownership, dependencies, and milestones in Jira.
+    \item Built a Spring Boot backend with JWT-based authentication and unit tests covering protected endpoints and core service logic.
+\end{resumeitemize}
+
+\section{Technologies}
+
+\textbf{Languages:} C\#, Java, Python, TypeScript, JavaScript \\ 
+
+\textbf{Frameworks:} .NET, Spring Boot, React, Next.js, Vue.js, Express \\
+
+\textbf{Cloud \& Infrastructure:} AWS, AWS CDK, Docker, RabbitMQ, Kong \\
+
+\textbf{Databases \& Tools:} MySQL, MongoDB, DynamoDB, Supabase, Git, SSMS, Tableau \\
+
+\section{Certifications}
+
+\textbf{\href{https://www.credly.com/badges/95267b1a-fc80-4af4-b35b-1c865d6dc534/linked_in_profile}{AWS Certified Solutions Architect -- Associate}} \hfill Amazon Web Services
+
+\textbf{\href{https://cert.heicodersacademy.com/30ULUT1BHW}{AI100: Python Programming and Data Visualization}} \hfill Heicoders Academy
+
+\textbf{Advanced Certificate in Infocomm Technology} \hfill SkillsFuture SG
+
+\end{document}

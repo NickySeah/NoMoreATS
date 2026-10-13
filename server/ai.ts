@@ -13,10 +13,22 @@ const qualificationPossessionDenial = /\b(?:not|never|don['’]t|doesn['’]t|di
 const useDenial = /\b(?:not|never|cannot|can['’]t|don['’]t|doesn['’]t|didn['’]t|haven['’]t|hasn['’]t|hadn['’]t)\s+(?:(?:ever|yet|personally|previously|directly|actually|professionally)\s+){0,3}(?:use[sd]?|work(?:ed)?\s+(?:with|on|in)|know|known|learn(?:ed)?|study|studied|practice[sd]?|develop(?:ed)?|deploy(?:ed)?|implement(?:ed)?|configure[sd]?|administer(?:ed)?|lead|led|manage[sd]?|build|built)\b/i;
 const qualificationUncertainty = /\b(?:not\s+(?:sure|certain)|(?:am|is|are|was|were|remain|feel|felt)\s+(?:unsure|uncertain|unfamiliar)|(?:unknown|unsure|uncertain)\s+(?:whether|if|about)|(?:cannot|can['’]t|don['’]t)\s+(?:remember|recall|confirm))\b/i;
 const explicitDenialOrUncertainty = (statement: string) => qualificationDenial.test(statement) || qualificationPossessionDenial.test(statement) || useDenial.test(statement) || qualificationUncertainty.test(statement);
-// A denial or uncertain sentence is not proof; distinct positive statements remain usable.
-// Keep dots inside names such as Node.js and .NET while removing sentence terminators.
-const affirmativeStatements = (text: string) => text.split(/[\r\n]+|(?<=[.!?;])\s+/)
+// Split clauses with their own explicit subject/predicate or an explicit contrast
+// denial. Bare coordinated objects/actions inherit denial ("never used AWS and
+// Docker"), so stay together rather than inventing an affirmative claim.
+const independentClause = /,?\s+\b(?:(?:but|whereas|while)\s+(?=(?:no|without|unknown|lack(?:s|ing)?)\s+)|(?:but|whereas|while|and)\s+(?=(?:I|we|he|she|they|there)\s+(?:have|has|had|am|is|are|was|were|do|does|did|can|cannot|never|used|worked|built|developed|deployed|implemented|configured|managed|led|measured|reduced|improved|cut)\b))/i;
+const affirmativeStatements = (text: string): string[] => text.split(/[\r\n]+|(?<=[.!?;])\s+/)
+  .flatMap(sentence => {
+    const boundary = independentClause.exec(sentence);
+    if (!boundary) return [sentence];
+    const before = sentence.slice(0, boundary.index);
+    // Denial or uncertainty ("no evidence that ... and I ...") can scope over
+    // both predicates. Preserve ambiguous coordination; contrasts stay independent.
+    if (/\band\b/i.test(boundary[0]) && explicitDenialOrUncertainty(before)) return [sentence];
+    return [before, ...affirmativeStatements(sentence.slice(boundary.index + boundary[0].length))];
+  })
   .filter(statement => !explicitDenialOrUncertainty(statement))
+  // Keep dots inside names such as Node.js and .NET.
   .map(statement => statement.trim().replace(/[.!?;]+$/g, ''));
 const supportsTerm = (text: string, term: string) => {
   const escaped = terminology(term).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

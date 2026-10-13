@@ -12,7 +12,10 @@ export function Library({ resumes, jobs, onResume, onTailor, onStatus, compact =
   const [statusError, setStatusError] = useState('')
   const jobMap = useMemo(() => {
     const map = new Map<string, Job[]>()
-    for (const job of jobs) if (job.resumeId) map.set(job.resumeId, [...(map.get(job.resumeId) || []), job])
+    for (const job of jobs) {
+      const versions = new Set([...(job.resumeHistory ?? []), ...(job.resumeId ? [job.resumeId] : [])])
+      for (const resumeId of versions) map.set(resumeId, [...(map.get(resumeId) || []), job])
+    }
     return map
   }, [jobs])
   const query = search.trim().toLowerCase()

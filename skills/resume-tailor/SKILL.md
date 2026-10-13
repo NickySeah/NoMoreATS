@@ -13,6 +13,8 @@ The caller supplies the job description, current text slots, profile evidence wi
 
 The job description establishes what the employer requests. Only supplied candidate evidence establishes qualifications. A prior accepted AI version is candidate wording, not independent proof. Do not browse, call tools, or retrieve URLs during this generation task.
 
+When a saved follow-up conversation is supplied, questions and their suggested achievements are not evidence. Use only the user's exact saved answer facts, attributed to their saved groups and supplied evidence IDs. An answer describing absent experience, uncertainty, or an unavailable qualification keeps that criterion unsupported; never convert a negative or unknown answer into an achievement. Skipped questions supply no facts.
+
 ## Match requirements to evidence
 
 Extract meaningful skills, responsibilities, tools, qualifications, and domain requirements. Distinguish explicitly required criteria from preferred criteria using the posting; when unspecified, mark preferred and explain material uncertainty in warnings. Keep `sourceQuote` as an exact excerpt from the posting.

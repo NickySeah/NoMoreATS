@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AppState, Job, Profile, Resume, Settings, TailorResult } from '../shared/types'
+import type { AppState, FollowupRound, Job, Profile, Resume, Settings, TailorResult } from '../shared/types'
 import { api, errorMessage } from './api'
 
 export type SaveStatus = 'saved' | 'dirty' | 'saving' | 'error'
@@ -53,7 +53,7 @@ export function useWorkspace() {
         if (active.current) { setSaveStatus('saving'); setSaveError('') }
         try {
           const saved = await api.profile(snapshot)
-          savedRevision.current = savingRevision
+          savedRevision.current = Math.max(savedRevision.current, savingRevision)
           if (revision.current === savingRevision) {
             profileRef.current = saved
             if (active.current) setState(current => current ? { ...current, profile: saved } : current)
@@ -89,6 +89,7 @@ export function useWorkspace() {
   }, [])
 
   const acceptSavedProfile = useCallback((profile: Profile) => {
+    loadRequest.current += 1
     if (timer.current) { clearTimeout(timer.current); timer.current = null }
     profileRef.current = profile
     revision.current += 1
@@ -98,6 +99,7 @@ export function useWorkspace() {
   }, [])
 
   const updateSettings = useCallback((settings: Settings) => setState(current => current ? { ...current, settings } : current), [])
+  const updateFollowup = useCallback((round: FollowupRound) => setState(current => current ? { ...current, followups: current.followups?.some(item => item.id === round.id) ? current.followups.map(item => item.id === round.id ? round : item) : [round, ...(current.followups ?? [])] } : current), [])
   const updateResume = useCallback((resume: Resume) => setState(current => current ? { ...current, resumes: current.resumes.map(item => item.id === resume.id ? resume : item) } : current), [])
   const updateJob = useCallback((job: Job) => setState(current => current ? { ...current, jobs: current.jobs.some(item => item.id === job.id) ? current.jobs.map(item => item.id === job.id ? job : item) : [job, ...current.jobs] } : current), [])
   const addTailorResult = useCallback((result: TailorResult) => setState(current => {
@@ -105,5 +107,5 @@ export function useWorkspace() {
     return { ...current, resumes: result.resume && !current.resumes.some(item => item.id === result.resume?.id) ? [result.resume, ...current.resumes] : current.resumes, jobs: current.jobs.some(item => item.id === result.job.id) ? current.jobs.map(item => item.id === result.job.id ? result.job : item) : [result.job, ...current.jobs] }
   }), [])
 
-  return { state, loadError, load, saveStatus, saveError, updateProfile, flushProfile, acceptSavedProfile, updateSettings, updateResume, updateJob, addTailorResult }
+  return { state, loadError, load, saveStatus, saveError, updateProfile, flushProfile, acceptSavedProfile, updateFollowup, updateSettings, updateResume, updateJob, addTailorResult }
 }

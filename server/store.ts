@@ -7,6 +7,13 @@ import { seedProfile } from './seed';
 
 interface DiskState extends Omit<AppState, 'settings'> { version: 1; settings: { model: string; templatePath: string; privacyMode: boolean } }
 
+export class FollowupProfileConflictError extends Error {
+  constructor() {
+    super('Your profile changed after follow-up answers were saved in another window. Reload before saving so those answers are preserved.');
+    this.name = 'FollowupProfileConflictError';
+  }
+}
+
 export class Store {
   private pending: Promise<unknown> = Promise.resolve();
   private localKey = '';
@@ -55,7 +62,15 @@ export class Store {
     });
   }
   async saveProfile(profile: Profile): Promise<Profile> {
-    return this.update(state => { state.profile = { ...profile, updatedAt: new Date().toISOString() }; return state.profile; });
+    return this.update(state => {
+      if (profile.updatedAt !== state.profile.updatedAt) {
+        const incomingAt = Date.parse(profile.updatedAt);
+        const answersSavedSince = state.followups?.some(round => round.answeredAt && round.answers.length > 0 && (!Number.isFinite(incomingAt) || Date.parse(round.answeredAt) > incomingAt));
+        if (answersSavedSince) throw new FollowupProfileConflictError();
+      }
+      state.profile = { ...profile, updatedAt: new Date().toISOString() };
+      return state.profile;
+    });
   }
   async saveSettings(settings: { model?: string; apiKey?: string; clearApiKey?: boolean; privacyMode?: boolean }): Promise<Settings> {
     await this.enqueue(async () => {

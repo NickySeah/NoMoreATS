@@ -10,6 +10,7 @@ import { ResumeDetail } from './components/ResumeDetail'
 import { SettingsPage } from './components/SettingsPage'
 import { Shell, type Page } from './components/Shell'
 import { TailorModal } from './components/TailorModal'
+import { FollowupModal } from './components/FollowupModal'
 import { TemplatePage } from './components/TemplatePage'
 import { Button, ErrorNotice } from './components/ui'
 
@@ -22,13 +23,14 @@ export default function App() {
   const [tailoring, setTailoring] = useState(false)
   const [reuseResumeId, setReuseResumeId] = useState('')
   const [selectedResume, setSelectedResume] = useState('')
+  const [followup, setFollowup] = useState<{ job: Job; resumeId: string } | null>(null)
   const [notice, setNotice] = useState('')
   const navigate = (next: Page) => { setPage(next); window.location.hash = next; window.scrollTo({ top: 0 }); setSelectedResume('') }
   useEffect(() => { const update = () => setPage(initialPage()); window.addEventListener('hashchange', update); return () => window.removeEventListener('hashchange', update) }, [])
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(''), 6000); return () => clearTimeout(timer) }, [notice])
   const save = () => { void workspace.flushProfile().catch(() => undefined) }
   const status = async (job: Job, next: JobStatus) => workspace.updateJob(await api.status(job.id, next))
-  const complete = (result: TailorResult) => { workspace.addTailorResult(result); setTailoring(false); if (result.resume) setSelectedResume(result.resume.id); setNotice('Your tailored resume is saved. Review its edits and evidence before applying.') }
+  const complete = (result: TailorResult) => { workspace.addTailorResult(result); setTailoring(false); setFollowup(null); if (result.resume) setSelectedResume(result.resume.id); setNotice('Your tailored resume is saved. Review its edits and evidence before applying.') }
   const reuse = (job: Job, resume: Resume) => { workspace.updateJob(job); setTailoring(false); setReuseResumeId(''); setSelectedResume(resume.id); setNotice('Application linked to your existing resume.') }
 
   if (!workspace.state) return <div className="loading-screen"><div className="loading-brand">NoMoreATS</div>{workspace.loadError ? <><ErrorNotice>{workspace.loadError}</ErrorNotice><Button onClick={() => { void workspace.load().catch(() => undefined) }}>Retry loading workspace</Button></> : <><LoaderCircle className="spin" size={27} /><p>Opening your local workspace…</p></>}</div>
@@ -42,7 +44,8 @@ export default function App() {
     {page === 'template' ? <TemplatePage template={state.template} settings={state.settings} flushProfile={workspace.flushProfile} onImport={workspace.load} /> : null}
     {page === 'settings' ? <SettingsPage settings={state.settings} onChange={workspace.updateSettings} onNotice={setNotice} /> : null}
     {tailoring ? <TailorModal reuseResume={state.resumes.find(item => item.id === reuseResumeId)} settings={state.settings} flushProfile={workspace.flushProfile} onProfileSaved={workspace.acceptSavedProfile} onComplete={complete} onReuse={reuse} onClose={() => { setTailoring(false); setReuseResumeId('') }} onSettings={() => { setTailoring(false); navigate('settings') }} /> : null}
-    {resume ? <ResumeDetail key={resume.id} resume={resume} jobs={state.jobs.filter(job => job.resumeId === resume.id)} onUpdate={workspace.updateResume} onStatus={status} onClose={() => setSelectedResume('')} onUse={() => { setReuseResumeId(resume.id); setSelectedResume(''); setTailoring(true) }} /> : null}
-    {notice ? <div className="toast" role="status"><span>{notice}</span><button className="icon-button" aria-label="Dismiss notification" onClick={() => setNotice('')}><X size={16} /></button></div> : null}
+    {resume && !followup ? <ResumeDetail key={resume.id} resume={resume} jobs={state.jobs.filter(job => job.resumeId === resume.id || job.resumeHistory?.includes(resume.id))} onUpdate={workspace.updateResume} onStatus={status} onImprove={job => setFollowup({ job, resumeId: resume.id })} onClose={() => setSelectedResume('')} onUse={() => { setReuseResumeId(resume.id); setSelectedResume(''); setTailoring(true) }} /> : null}
+    {followup ? <FollowupModal key={`${followup.job.id}-${followup.resumeId}`} job={followup.job} jobId={followup.job.id} resumeId={followup.resumeId} profile={state.profile} settings={state.settings} rounds={state.followups ?? []} flushProfile={workspace.flushProfile} onProfile={workspace.acceptSavedProfile} onRound={workspace.updateFollowup} onComplete={complete} onClose={() => setFollowup(null)} onSettings={() => { setFollowup(null); navigate('settings') }} /> : null}
+    {notice && !tailoring && !followup ? <div className="toast" role="status"><span>{notice}</span><button className="icon-button" aria-label="Dismiss notification" onClick={() => setNotice('')}><X size={16} /></button></div> : null}
   </Shell>
 }

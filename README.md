@@ -41,11 +41,15 @@ Then open http://127.0.0.1:3001. `npm run typecheck` and `npm test` run the chec
 5. Review **Job match & gaps**, which opens for tailored resumes and pinpoints relevant facts, distinguishing full from partial matches. Then review the PDF and edits. A generated resume is saved only after its PDF is verified as exactly one page with no overfull boxes. An overflowing draft gets one additional AI request for a shorter revision; if that still fails, the app rejects it without saving a resume or application. Missing or failed PDF compilation also blocks saving. PDF and `.tex` downloads are available for saved resumes.
 6. Review reuse suggestions, or select **Use for a job** on an existing resume. Multiple applications can share one immutable version. The library keeps each description and application status.
 
+To refine a saved resume, select **Improve with AI questions** in its **Job match & gaps**. The AI asks focused questions tied to the posting and suggests where each answer belongs. You can change the experience/project attribution, leave questions blank, and answer honestly when you lack a qualification. **Save answers & generate** appends your exact answers to the selected profile notes, then makes a new model request using the job, current evidence, and conversation. General answers go to Additional evidence. Question wording is never saved as an accomplishment.
+
+Repeat from the resulting resume to add further detail. Each successful revision keeps the same application and status, links its earlier resume versions, and passes the existing one-page check. Saved answers remain available if generation fails; **Retry resume generation** does not append them again. Pending questions and saved rounds persist locally. A question request and each generation are separate paid model calls; blank answers are skipped.
+
 ## Data and credentials
 
 This version is a personal app on one computer. It does not implement cloud accounts or cross-device login. Reopening it restores your saved workspace automatically.
 
-`data/workspace.json` contains the profile, template versions, resume snapshots, analyses, and linked applications. PDF/LaTeX artifacts live under `data/artifacts/`. Writes are serialized and use a temporary file plus rename. If the workspace is corrupt, startup preserves the file and reports an error.
+`data/workspace.json` contains the profile, template versions, resume snapshots, analyses, linked applications, and follow-up questions/answers. PDF/LaTeX artifacts live under `data/artifacts/`. Writes are serialized and use a temporary file plus rename. If the workspace is corrupt, startup preserves the file and reports an error.
 
 An explicit **Save key** action stores the key as plain text in `data/secrets.json`, on the backend. It is never returned in app state or exports. These files, `.env`, and generated artifacts are ignored by Git. Prefer an environment key if desired: copy `.env.example` to `.env`, fill `OPENROUTER_API_KEY`, and restart. Environment keys take precedence over locally saved keys. Removing a local key cannot remove an environment key.
 

@@ -1,35 +1,54 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { access, readFile, rm } from 'node:fs/promises';
 import { basename, dirname, extname, resolve } from 'node:path';
 import { z, ZodError } from 'zod';
-import type { Analysis, Job, JobInput, PdfResult, Resume, ResumeTemplate } from '../shared/types';
-import { getEvidence } from '../shared/evidence';
+import type { Analysis, EvidenceQuestion, EvidenceSaveResult, Job, JobInput, PdfResult, Resume, ResumeTemplate } from '../shared/types';
+import { getEvidence, getEvidenceGroups } from '../shared/evidence';
 import { Store } from './store';
 import { jobInputSchema, profileSchema, settingsSchema } from './validation';
 import { extractTemplate, renderTemplate } from './template';
-import { isResumeReusable, listModels, tailorWithOpenRouter, validateAnalysis } from './ai';
+import { analyzeEvidenceWithOpenRouter, validateQuestionAnalysis, isResumeReusable, listModels, tailorWithOpenRouter, validateAnalysis } from './ai';
 import { artifactPath, compilePdf, isOnePagePdf } from './pdf';
 import { assertTemplateFacts } from './consistency';
 
+type Analyze = typeof analyzeEvidenceWithOpenRouter;
 type Generate = typeof tailorWithOpenRouter;
 type Compile = typeof compilePdf;
-export function createApp(store: Store, options: { generate?: Generate; compile?: Compile } = {}) {
+export function createApp(store: Store, options: { analyze?: Analyze; generate?: Generate; compile?: Compile } = {}) {
   const app = express();
+  const privateOrigin = process.env.TAILSCALE_ORIGIN?.trim();
+  const privateUser = process.env.TAILSCALE_USER?.trim();
+  if (Boolean(privateOrigin) !== Boolean(privateUser)) throw new Error('Set both TAILSCALE_ORIGIN and TAILSCALE_USER.');
+  const privateUrl = privateOrigin ? new URL(privateOrigin) : null;
+  if (privateUrl && (privateUrl.protocol !== 'https:' || privateUrl.origin !== privateOrigin || !privateUrl.hostname.endsWith('.ts.net'))) throw new Error('TAILSCALE_ORIGIN must be an exact HTTPS ts.net origin.');
   const generate = options.generate || tailorWithOpenRouter;
   const compile = options.compile || compilePdf;
   const compiling = new Map<string, Promise<Resume>>();
   let generating = false;
+  const reviews = new Map<string, { job: JobInput; binding: string; questions: EvidenceQuestion[]; reviewed: boolean; expires: number; answerHash?: string; save?: Promise<EvidenceSaveResult> }>();
+  const binding = (state: ReturnType<Store['state']>) => createHash('sha256').update(JSON.stringify({ profile: { ...state.profile, updatedAt: '' }, template: { id: state.template.id, sourceHash: state.template.sourceHash } })).digest('hex');
+  const findReview = (id: string, job: JobInput) => {
+    const review = reviews.get(id);
+    if (!review || review.expires < Date.now() || JSON.stringify(review.job) !== JSON.stringify(job) || review.binding !== binding(store.state())) throw new HttpError(409, 'This evidence review is out of date. Return to job details and analyze again.');
+    return review;
+  };
   app.disable('x-powered-by');
   app.use((req, res, next) => {
     const host = req.headers.host?.split(':')[0];
-    if (!host || !['localhost', '127.0.0.1'].includes(host)) return res.status(403).json({ error: 'This personal workspace accepts localhost requests only.' });
+    const localHost = Boolean(host && ['localhost', '127.0.0.1'].includes(host));
+    const serveHost = Boolean(privateUrl && req.headers.host === privateUrl.host);
+    if (!localHost && !serveHost) return res.status(403).json({ error: 'This personal workspace accepts localhost or its configured private hostname only.' });
+    // Trust Serve identity headers only while the backend is loopback-published;
+    // Serve strips client-supplied identity headers before injecting its own.
+    if ((serveHost || req.headers['tailscale-user-login']) && (!privateUser || req.headers['tailscale-user-login'] !== privateUser)) return res.status(403).json({ error: 'This workspace is restricted to its configured Tailscale user.' });
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('Cache-Control', 'no-store');
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
       const origin = req.headers.origin;
       const allowed = ['http://localhost:5173', 'http://127.0.0.1:5173', `http://localhost:${process.env.PORT || '3001'}`, `http://127.0.0.1:${process.env.PORT || '3001'}`];
+      if (privateOrigin) allowed.push(privateOrigin);
       if (origin && !allowed.includes(origin)) return res.status(403).json({ error: 'Cross-origin writes are not allowed.' });
       if (!req.is('application/json')) return res.status(415).json({ error: 'Send changes as application/json.' });
     }
@@ -63,6 +82,54 @@ export function createApp(store: Store, options: { generate?: Generate; compile?
   app.put('/api/settings', async (req, res) => res.json(await store.saveSettings(settingsSchema.parse(req.body))));
   app.get('/api/models', async (_req, res) => res.json({ models: await listModels(store.key()) }));
   app.get('/api/export', (_req, res) => { res.attachment('nomoreats-backup.json').json({ version: 1, ...store.state() }); });
+  app.post('/api/evidence/analyze', async (req, res) => {
+    const { job } = z.object({ job: jobInputSchema }).strict().parse(req.body);
+    if (!store.key() || !store.settings().model) throw new HttpError(400, 'Connect your OpenRouter API key and choose a model in Settings first.');
+    const snapshot = store.state();
+    const groups = getEvidenceGroups(snapshot.profile);
+    const result = validateQuestionAnalysis(await (options.analyze || analyzeEvidenceWithOpenRouter)({ key: store.key(), model: snapshot.settings.model, privacyMode: snapshot.settings.privacyMode, evidence: getEvidence(snapshot.profile), groups, job }), getEvidence(snapshot.profile), groups, job.description);
+    const reviewId = randomUUID();
+    for (const [id, review] of reviews) if (review.expires < Date.now()) reviews.delete(id);
+    if (reviews.size >= 50) reviews.delete(reviews.keys().next().value!);
+    reviews.set(reviewId, { job, binding: binding(snapshot), questions: result.questions, reviewed: false, expires: Date.now() + 30 * 60 * 1000 });
+    res.json({ ...result, groups, reviewId });
+  });
+  app.post('/api/evidence/save', async (req, res) => {
+    const input = z.object({ reviewId: z.string().uuid(), job: jobInputSchema, answers: z.array(z.object({ questionId: z.string().max(80), disposition: z.enum(['answer', 'no-experience', 'skip']), text: z.string().trim().max(3000).refine(text => !/[\\\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(text), 'Use factual plain text, not LaTeX.'), group: z.string().max(100).nullable() }).strict()).max(8) }).strict().parse(req.body);
+    const review = findReview(input.reviewId, input.job);
+    const answerHash = createHash('sha256').update(JSON.stringify(input.answers)).digest('hex');
+    if (review.save) {
+      if (review.answerHash !== answerHash) throw new HttpError(409, 'These answers were already saved. Continue to generation or analyze again.');
+      return res.json(await review.save);
+    }
+    const ids = input.answers.map(answer => answer.questionId);
+    if (new Set(ids).size !== ids.length || ids.length !== review.questions.length || review.questions.some(question => !ids.includes(question.id))) throw new HttpError(400, 'Review each question exactly once.');
+    review.answerHash = answerHash;
+    const save = (async () => {
+      let savedCount = 0;
+      const profile = await store.update(state => {
+        if (binding({ ...state, settings: store.settings() }) !== review.binding) throw new HttpError(409, 'Your profile changed. Analyze again before saving answers.');
+        for (const answer of input.answers) {
+          if (answer.disposition !== 'answer') {
+            if (answer.text || answer.group) throw new HttpError(400, 'No experience and skipped answers cannot save positive evidence.');
+            continue;
+          }
+          if (!answer.text || !answer.group) throw new HttpError(400, 'Enter a factual answer and select its existing role, project or skill category.');
+          const entry = state.profile.experience.find(item => `experience.${item.id}` === answer.group) || state.profile.projects.find(item => `project.${item.id}` === answer.group) || state.profile.skills.find(item => `skills.${item.id}` === answer.group);
+          if (!entry) throw new HttpError(400, 'Choose an existing role, project or skill category.');
+          entry.notes = [entry.notes, answer.text].filter(Boolean).join('\n\n');
+          savedCount++;
+        }
+        state.profile = profileSchema.parse({ ...state.profile, updatedAt: new Date().toISOString() });
+        return state.profile;
+      });
+      review.binding = binding(store.state());
+      review.reviewed = true;
+      return { reviewId: input.reviewId, profile, savedCount };
+    })();
+    review.save = save;
+    try { res.json(await save); } catch (error) { delete review.save; delete review.answerHash; throw error; }
+  });
   app.post('/api/template', async (req, res) => {
     const input = z.object({ path: z.string().min(1).max(1000).optional(), source: z.string().min(1).max(200000).optional(), name: z.string().max(200).optional() }).parse(req.body);
     if (Boolean(input.path) === Boolean(input.source)) throw new HttpError(400, 'Provide either a local .tex path or uploaded source.');
@@ -102,7 +169,8 @@ export function createApp(store: Store, options: { generate?: Generate; compile?
     res.json(job);
   });
   app.post('/api/tailor', async (req, res) => {
-    const input = z.object({ job: jobInputSchema, forceNew: z.boolean().optional() }).parse(req.body);
+    const input = z.object({ job: jobInputSchema, forceNew: z.boolean().optional(), reviewId: z.string().uuid().optional() }).strict().parse(req.body);
+    if (input.reviewId && !findReview(input.reviewId, input.job).reviewed) throw new HttpError(409, 'Review and save your answers before generating.');
     if (generating) throw new HttpError(409, 'A resume is already being tailored. Wait for it to finish.');
     if (!store.key() || !store.settings().model) throw new HttpError(400, 'Connect your OpenRouter API key and choose a model in Settings first.');
     const snapshot = store.state();

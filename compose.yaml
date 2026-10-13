@@ -9,6 +9,8 @@ services:
       HOST: 0.0.0.0
       PORT: "3001"
       DATA_DIR: /app/data
+      TAILSCALE_ORIGIN: ${TAILSCALE_ORIGIN:-}
+      TAILSCALE_USER: ${TAILSCALE_USER:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
     volumes:
       - workspace:/app/data

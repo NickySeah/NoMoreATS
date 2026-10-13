@@ -1,0 +1,40 @@
+name: nomoreats-dev
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: nomoreats:dev
+    init: true
+    ports:
+      - "127.0.0.1:3001:5173"
+    environment:
+      HOST: 0.0.0.0
+      PORT: "3001"
+      DATA_DIR: /data
+      VITE_HOST: 0.0.0.0
+      TAILSCALE_ORIGIN: ${TAILSCALE_ORIGIN:-}
+      TAILSCALE_USER: ${TAILSCALE_USER:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+    volumes:
+      - ./src:/app/src:ro
+      - ./server:/app/server:ro
+      - ./shared:/app/shared:ro
+      - ./templates:/app/templates:ro
+      - ./skills/resume-tailor:/app/skills/resume-tailor:ro
+      - ./scripts:/app/scripts:ro
+      - ./index.html:/app/index.html:ro
+      - ./vite.config.ts:/app/vite.config.ts:ro
+      - dev-workspace:/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5173/api/state').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+volumes:
+  dev-workspace:

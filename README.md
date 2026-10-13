@@ -2,6 +2,16 @@
 
 A local React workspace that tailors Nicholas's resume to job descriptions using OpenRouter, while preserving the supplied LaTeX format.
 
+## Run with Docker
+
+```sh
+docker compose up -d --build --wait
+```
+
+Open **http://127.0.0.1:3001**. Node, LaTeX, and PDF tools are included; workspace data persists in a Docker volume. See [Docker setup and backup guidance](docs/docker.md). This remains a local-only personal app, not a public hosted service.
+
+For automatic code updates, use the [separate Docker hot-reload setup](docs/docker-development.md).
+
 ## Run
 
 Requires Node.js 22.12 or later and npm. PDF generation needs `pdflatex` on PATH (MiKTeX or TeX Live); `pdftotext` is optional for a text-extraction check. The tools are already available on this computer.

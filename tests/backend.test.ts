@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -17,6 +17,20 @@ afterEach(async () => { await Promise.all(dirs.splice(0).map(d => rm(d, { recurs
 const job: JobInput = { company: 'Example Company', role: 'Software Engineer', description: 'Build TypeScript services and AWS APIs.', url: '', instructions: '' };
 async function setup() { const dir = await mkdtemp(join(tmpdir(), 'nomoreats-api-')); dirs.push(dir); const store = await Store.open(dir); return { store, app: createApp(store, { compile: async () => ({ status: 'ready', pages: 1, message: 'Fixture compiler', warnings: [] }) }) }; }
 describe('workspace API', () => {
+  it('restricts configured private HTTPS access to the approved Serve identity', async () => {
+    vi.stubEnv('TAILSCALE_ORIGIN', 'https://nickyserver.tailb84a0e.ts.net');
+    vi.stubEnv('TAILSCALE_USER', 'nicholasseah02@gmail.com');
+    try {
+      const { app } = await setup();
+      const host = 'nickyserver.tailb84a0e.ts.net';
+      expect((await request(app).get('/api/state').set('Host', host)).status).toBe(403);
+      expect((await request(app).get('/api/state').set('Host', host).set('Tailscale-User-Login', 'other@example.com')).status).toBe(403);
+      expect((await request(app).get('/api/state').set('Host', host).set('Tailscale-User-Login', 'nicholasseah02@gmail.com')).status).toBe(200);
+      const write = () => request(app).put('/api/settings').set('Host', host).set('Tailscale-User-Login', 'nicholasseah02@gmail.com');
+      expect((await write().set('Origin', 'https://attacker.example').send({ privacyMode: true })).status).toBe(403);
+      expect((await write().set('Origin', 'https://nickyserver.tailb84a0e.ts.net').send({ privacyMode: true })).status).toBe(200);
+    } finally { vi.unstubAllEnvs(); }
+  });
   it('keeps the current analysis evidence when linking an older resume', async () => {
     const { store, app } = await setup();
     const original = store.state().resumes[0];

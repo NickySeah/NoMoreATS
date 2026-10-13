@@ -88,6 +88,15 @@ export function useWorkspace() {
     return () => window.removeEventListener('beforeunload', warnUnsaved)
   }, [])
 
+  const acceptSavedProfile = useCallback((profile: Profile) => {
+    if (timer.current) { clearTimeout(timer.current); timer.current = null }
+    profileRef.current = profile
+    revision.current += 1
+    savedRevision.current = revision.current
+    setSaveStatus('saved'); setSaveError('')
+    setState(current => current ? { ...current, profile } : current)
+  }, [])
+
   const updateSettings = useCallback((settings: Settings) => setState(current => current ? { ...current, settings } : current), [])
   const updateResume = useCallback((resume: Resume) => setState(current => current ? { ...current, resumes: current.resumes.map(item => item.id === resume.id ? resume : item) } : current), [])
   const updateJob = useCallback((job: Job) => setState(current => current ? { ...current, jobs: current.jobs.some(item => item.id === job.id) ? current.jobs.map(item => item.id === job.id ? job : item) : [job, ...current.jobs] } : current), [])
@@ -96,5 +105,5 @@ export function useWorkspace() {
     return { ...current, resumes: result.resume && !current.resumes.some(item => item.id === result.resume?.id) ? [result.resume, ...current.resumes] : current.resumes, jobs: current.jobs.some(item => item.id === result.job.id) ? current.jobs.map(item => item.id === result.job.id ? result.job : item) : [result.job, ...current.jobs] }
   }), [])
 
-  return { state, loadError, load, saveStatus, saveError, updateProfile, flushProfile, updateSettings, updateResume, updateJob, addTailorResult }
+  return { state, loadError, load, saveStatus, saveError, updateProfile, flushProfile, acceptSavedProfile, updateSettings, updateResume, updateJob, addTailorResult }
 }

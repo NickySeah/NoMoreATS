@@ -2,7 +2,7 @@ export interface Contact { name: string; email: string; phone: string; location:
 export interface Experience { id: string; company: string; role: string; dates: string; url: string; bullets: string[]; notes: string }
 export interface Project { id: string; name: string; technologies: string; url: string; bullets: string[]; notes: string }
 export interface Education { id: string; school: string; degree: string; dates: string; details: string[] }
-export interface SkillCategory { id: string; name: string; items: string }
+export interface SkillCategory { id: string; name: string; items: string; notes?: string }
 export interface Certification { id: string; name: string; issuer: string; url: string }
 export interface Profile { contact: Contact; summary: string; experience: Experience[]; projects: Project[]; education: Education[]; skills: SkillCategory[]; certifications: Certification[]; additionalEvidence: string; updatedAt: string }
 export interface Evidence { id: string; text: string; group: string }
@@ -19,4 +19,10 @@ export interface Resume { id: string; name: string; createdAt: string; kind: 'or
 export interface Settings { model: string; apiKeyConfigured: boolean; keySource: 'environment' | 'local' | 'none'; templatePath: string; privacyMode: boolean }
 export interface AppState { profile: Profile; template: ResumeTemplate; resumes: Resume[]; jobs: Job[]; settings: Settings }
 export interface TailorResult { resume: Resume | null; job: Job; analysis: Analysis; suggestedResume: Resume | null }
+export interface EvidenceGroup { id: string; label: string }
+export interface EvidenceQuestion { id: string; term: string; sourceQuote: string; importance: 'required' | 'preferred'; question: string; evidenceIds: string[]; suggestedGroup: string | null }
+export interface QuestionAnalysis { summary: string; questions: EvidenceQuestion[] }
+export interface EvidenceReview extends QuestionAnalysis { reviewId: string; groups: EvidenceGroup[] }
+export interface EvidenceAnswer { questionId: string; disposition: 'answer' | 'no-experience' | 'skip'; text: string; group: string | null }
+export interface EvidenceSaveResult { reviewId: string; profile: Profile; savedCount: number }
 export interface ModelOption { id: string; name: string; pricing: { prompt: string; completion: string }; context_length: number; supported_parameters?: string[] }

@@ -1,0 +1,24 @@
+services:
+  app:
+    build: .
+    image: nomoreats:local
+    init: true
+    ports:
+      - "127.0.0.1:3001:3001"
+    environment:
+      HOST: 0.0.0.0
+      PORT: "3001"
+      DATA_DIR: /app/data
+      TAILSCALE_ORIGIN: ${TAILSCALE_ORIGIN:-}
+      TAILSCALE_USER: ${TAILSCALE_USER:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+    volumes:
+      - workspace:/app/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+
+volumes:
+  workspace:

@@ -157,7 +157,8 @@ export function createApp(store: Store, options: { generate?: Generate; compile?
     if (!isOnePagePdf(resume.pdf) || !artifactExists) resume = await compileResume(resume.id);
     requireOnePage(resume.pdf);
     res.setHeader('Content-Disposition', `${req.query.download === '1' ? 'attachment' : 'inline'}; filename="${safeFilename(resume.name)}.pdf"`);
-    res.sendFile(resolve(artifactPath(store.dir, resume.id)));
+    // Data directories may live under a hidden user/config or temporary directory.
+    res.sendFile(resolve(artifactPath(store.dir, resume.id)), { dotfiles: 'allow' });
   });
   app.use('/api', (_req, res) => res.status(404).json({ error: 'API route not found.' }));
   app.use(express.static(resolve('dist')));

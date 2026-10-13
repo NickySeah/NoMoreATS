@@ -69,16 +69,21 @@ describe('workspace API', () => {
   });
   it('rebuilds missing PDF artifacts after restoring a backup marked ready', async () => {
     const { store } = await setup();
-    const original = store.state().resumes[0];
-    await store.update(state => { state.resumes[0].pdf = { status: 'ready', pages: 1, message: 'Restored metadata', warnings: [] }; });
-    const app = createApp(store, { compile: async (dataDir, id) => {
+    // Express rejects hidden parent directories by default, even for valid PDFs.
+    const hiddenDir = join(store.dir, '.restored-workspace');
+    await mkdir(hiddenDir);
+    const restoredStore = await Store.open(hiddenDir);
+    const original = restoredStore.state().resumes[0];
+    await restoredStore.update(state => { state.resumes[0].pdf = { status: 'ready', pages: 1, message: 'Restored metadata', warnings: [] }; });
+    const app = createApp(restoredStore, { compile: async (dataDir, id) => {
       const path = artifactPath(dataDir, id);
       await mkdir(dirname(path), { recursive: true });
       await writeFile(path, '%PDF-1.4\nrebuilt-artifact');
       return { status: 'ready', pages: 1, message: 'Rebuilt from stored source', warnings: [] };
     } });
     const response = await request(app).get(`/api/resumes/${original.id}/pdf`);
+    expect(response.body.error).toBeUndefined();
     expect(response.status).toBe(200); expect(response.body.toString()).toContain('rebuilt-artifact');
-    expect(store.state().resumes[0].pdf.message).toBe('Rebuilt from stored source');
+    expect(restoredStore.state().resumes[0].pdf.message).toBe('Rebuilt from stored source');
   });
 });

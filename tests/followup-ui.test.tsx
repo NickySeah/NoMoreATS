@@ -19,12 +19,48 @@ const settings: Settings = { model: 'test/model', apiKeyConfigured: true, keySou
 const noop = () => undefined
 
 describe('follow-up entry and previous resume versions', () => {
-  it('shows the earlier resume evidence and analysis when the linked application has a newer resume', () => {
+  it('does not substitute either version report when historical application coverage was not retained', () => {
     const html = renderToStaticMarkup(createElement(ResumeDetail, { resume, jobs: [job], onUpdate: noop, onStatus: async () => undefined, onClose: noop, onUse: noop }))
-    expect(html).toContain('Earlier resume assessment.')
-    expect(html).toContain('Evidence from the earlier version.')
+    expect(html).toContain('Historical coverage unavailable')
+    expect(html).not.toContain('Earlier resume assessment.')
+    expect(html).not.toContain('Evidence from the earlier version.')
     expect(html).not.toContain('Latest resume assessment.')
     expect(html).not.toContain('Evidence from the latest version.')
+  })
+
+  it('does not label application A coverage as the historical report for refined application B', () => {
+    const applicationA = { ...job, id: 'application-a', company: 'Company A', resumeId: resume.id, resumeHistory: [], analysis: { ...analysis, summary: 'Application A assessment.' } }
+    const applicationB = { ...job, id: 'application-b', company: 'Company B', analysis: { ...analysis, summary: 'Refined application B assessment.' } }
+    const sharedResume = { ...resume, analysis: applicationA.analysis }
+    // B is initially selected; A still uses the shared older resume.
+    const html = renderToStaticMarkup(createElement(ResumeDetail, { resume: sharedResume, jobs: [applicationB, applicationA], onUpdate: noop, onStatus: async () => undefined, onClose: noop, onUse: noop }))
+    expect(html).toContain('Historical coverage unavailable')
+    expect(html).not.toContain('Application A assessment.')
+    expect(html).not.toContain('Refined application B assessment.')
+    expect(html).not.toContain('Build APIs')
+    expect(html).not.toContain('Its match report and evidence are from the saved version.')
+  })
+
+  it('keeps current application coverage bound to that job and its evidence snapshot', () => {
+    const current = { ...job, resumeId: resume.id }
+    const html = renderToStaticMarkup(createElement(ResumeDetail, { resume, jobs: [current], onUpdate: noop, onStatus: async () => undefined, onClose: noop, onUse: noop }))
+    expect(html).toContain('Latest resume assessment.')
+    expect(html).toContain('Evidence from the latest version.')
+    expect(html).not.toContain('Earlier resume assessment.')
+    expect(html).not.toContain('Historical coverage unavailable')
+  })
+
+  it('does not fall back to the generating application for an unanalyzed current link', () => {
+    const current = { ...job, resumeId: resume.id, analysis: null }
+    const html = renderToStaticMarkup(createElement(ResumeDetail, { resume, jobs: [current], onUpdate: noop, onStatus: async () => undefined, onClose: noop, onUse: noop }))
+    expect(html).toContain('Not analyzed for this job')
+    expect(html).not.toContain('Earlier resume assessment.')
+  })
+
+  it('retains the saved resume report when no application is selected', () => {
+    const html = renderToStaticMarkup(createElement(ResumeDetail, { resume, jobs: [], onUpdate: noop, onStatus: async () => undefined, onClose: noop, onUse: noop }))
+    expect(html).toContain('Earlier resume assessment.')
+    expect(html).toContain('Evidence from the earlier version.')
   })
 
   it('uses the remote evidence review before generating a new resume', () => {

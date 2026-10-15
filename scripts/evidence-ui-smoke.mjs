@@ -8,6 +8,8 @@ const output = `${tmpdir()}/nomoreats-evidence-review`
 await mkdir(output, { recursive: true })
 const browser = await chromium.launch({ headless: true })
 const job = { company: 'Fixture company', role: 'Engineer', description: 'Build services and own CI/CD pipelines.', url: '', instructions: '' }
+const analysisError = 'Evidence question 1 (sourceQuote): quotation is not a contiguous excerpt of the job description (case and whitespace are ignored). Retry analysis or choose another structured-output model.'
+const envelopeError = 'OpenRouter returned an unreadable response envelope (HTTP 200; content type: application/json; body: empty). This is a provider/server response error, not a model-generated JSON error. Your saved data is intact. Retry explicitly or choose another model.'
 const errors = []
 try {
   for (const width of [1440, 390]) {
@@ -23,7 +25,8 @@ try {
     })
     await page.route('**/api/evidence/analyze', async route => {
       analyzeCount++
-      if (analyzeCount === 1) return route.fulfill({ status: 400, json: { error: 'Fixture analysis failure. Retry analysis.' } })
+      if (analyzeCount === 1) return route.fulfill({ status: 400, json: { error: analysisError } })
+      if (analyzeCount === 2) return route.fulfill({ status: 400, json: { error: envelopeError } })
       await route.fulfill({ json: { reviewId: 'fixture-review', summary: 'Confirm CI/CD ownership.', groups: [{ id: 'experience.govtech', label: 'Engineer at GovTech' }], questions: [{ id: 'q1', term: 'CI/CD', importance: 'required', sourceQuote: 'own CI/CD pipelines', evidenceIds: [], suggestedGroup: 'experience.govtech', question: 'Have you personally built CI/CD pipelines? Describe your contribution, tools and role.' }] } })
     })
     await page.route('**/api/evidence/save', async route => {
@@ -41,8 +44,17 @@ try {
     await page.getByLabel('Role', { exact: true }).fill(job.role)
     await page.getByLabel('Full job description', { exact: true }).fill(job.description)
     await page.getByRole('button', { name: 'Analyze job requirements', exact: true }).click()
-    await page.getByRole('alert').filter({ hasText: 'Fixture analysis failure' }).waitFor()
+    await page.getByRole('alert').filter({ hasText: analysisError }).waitFor()
+    assert.equal(analyzeCount, 1)
+    assert.equal(saves.length, 0)
     assert.equal(generations.length, 0)
+    await page.getByRole('button', { name: 'Analyze job requirements', exact: true }).click()
+    await page.getByRole('alert').filter({ hasText: envelopeError }).waitFor()
+    assert.equal(analyzeCount, 2)
+    assert.equal(saves.length, 0)
+    assert.equal(generations.length, 0)
+    assert.equal(await page.getByLabel('Full job description').inputValue(), job.description)
+    assert.equal(await page.getByRole('heading', { name: 'Review your evidence', exact: true }).count(), 0)
     await page.getByRole('button', { name: 'Analyze job requirements', exact: true }).click()
     await page.getByRole('heading', { name: 'Review your evidence', exact: true }).waitFor()
     await page.getByLabel('Response for CI/CD').selectOption('no-experience')

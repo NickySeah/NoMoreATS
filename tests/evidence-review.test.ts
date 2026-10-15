@@ -41,6 +41,19 @@ describe('pre-generation evidence review', () => {
     ]) expect(() => ai.validateQuestionAnalysis({ ...questions, questions: [question] }, options.evidence, options.groups, job.description)).toThrow();
     expect(() => ai.validateQuestionAnalysis({ ...questions, edits: [] }, options.evidence, options.groups, job.description)).toThrow();
   });
+  it('instructs the model to satisfy question ID, quote and plain-text validation constraints', async () => {
+    let outbound: any;
+    const fetcher: typeof fetch = async (_url, init) => {
+      outbound = JSON.parse(String(init!.body));
+      return Response.json({ choices: [{ message: { content: JSON.stringify(questions) }, finish_reason: 'stop' }] });
+    };
+    await ai.analyzeEvidenceWithOpenRouter({ key: 'test-fixture-key', model: 'test/model', privacyMode: true, job, evidence: [], groups: [{ id: 'experience.govtech', label: 'GovTech' }], fetcher });
+    const instructions = outbound.messages[0].content;
+    expect(instructions).toMatch(/unique.*ID/i);
+    expect(instructions).toMatch(/sourceQuote.*exact contiguous excerpt.*job\.description/i);
+    expect(instructions).toMatch(/do not paraphrase.*ellipses.*combine/i);
+    expect(instructions).toMatch(/question.*plain single-line text.*backslashes.*control characters.*newlines.*tabs/i);
+  });
   it('saves explicitly confirmed facts cumulatively in their selected existing group and supports tailoring', async () => {
     const { store, app, generate } = await fixture();
     const profile = store.state().profile;
@@ -77,6 +90,24 @@ describe('pre-generation evidence review', () => {
     const options = { key: 'test-fixture-key', model: 'test/model', privacyMode: true, job, evidence: getEvidence(store.state().profile), groups: [], fetcher: async () => response };
     await expect(ai.analyzeEvidenceWithOpenRouter(options)).rejects.toThrow();
     await expect(ai.analyzeEvidenceWithOpenRouter({ ...options, fetcher: async () => Response.json({ error: { message: 'Private upstream detail' } }) })).rejects.not.toThrow('Private upstream detail');
+  });
+  it('identifies the duplicate question index and id field without echoing model text or retrying', async () => {
+    const question = { ...questions.questions[0], id: 'private-id', question: 'Private profile detail?' };
+    const fetcher = vi.fn(async () => Response.json({ choices: [{ message: { content: JSON.stringify({ ...questions, questions: [question, question] }) }, finish_reason: 'stop' }] }));
+    await expect(ai.analyzeEvidenceWithOpenRouter({ key: 'private-key', model: 'test/model', privacyMode: true, job, evidence: [], groups: [{ id: 'experience.govtech', label: 'GovTech' }], fetcher })).rejects.toThrow('Evidence question 2 (id): duplicate question ID. Retry analysis or choose another structured-output model.');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it.each(['Private invented requirement', 'Build services ... own CI/CD pipelines', 'CI/CD pipelines and Build services'])('identifies a noncontiguous or missing sourceQuote without echoing it: %s', sourceQuote => {
+    const question = { ...questions.questions[0], id: 'q2', sourceQuote };
+    expect(() => ai.validateQuestionAnalysis({ ...questions, questions: [questions.questions[0], question] }, [], [{ id: 'experience.govtech', label: 'GovTech' }], job.description)).toThrow('Evidence question 2 (sourceQuote): quotation is not a contiguous excerpt of the job description (case and whitespace are ignored). Retry analysis or choose another structured-output model.');
+  });
+  it('preserves case and whitespace normalization for contiguous job quotations', () => {
+    const question = { ...questions.questions[0], sourceQuote: 'OWN  ci/cd\n pipelines' };
+    expect(ai.validateQuestionAnalysis({ ...questions, questions: [question] }, [], [{ id: 'experience.govtech', label: 'GovTech' }], job.description).questions).toEqual([question]);
+  });
+  it.each(['\\', '\n', '\r', '\t', '\u0000', '\u001f'])('identifies unsafe question text without echoing it (%j)', unsafe => {
+    const question = { ...questions.questions[0], question: `Private${unsafe}profile detail?` };
+    expect(() => ai.validateQuestionAnalysis({ ...questions, questions: [question] }, [], [{ id: 'experience.govtech', label: 'GovTech' }], job.description)).toThrow('Evidence question 1 (question): text contains a backslash or control character; questions must be plain single-line text. Retry analysis or choose another structured-output model.');
   });
   it('rejects duplicate questions and oversized analyses', async () => {
     const { store } = await fixture();
@@ -173,6 +204,40 @@ describe('pre-generation evidence review', () => {
     const review = (await request(app).post('/api/evidence/analyze').send({ job })).body;
     const result = await request(app).post('/api/evidence/save').send({ reviewId: review.reviewId, job, answers: [answer] });
     expect(result.status).toBe(400); expect(store.state().profile).toEqual(before);
+  });
+  it.each([
+    { questions: [questions.questions[0], questions.questions[0]], diagnostic: 'Evidence question 2 (id): duplicate question ID.' },
+    { questions: [{ ...questions.questions[0], sourceQuote: 'Private invented requirement' }], diagnostic: 'Evidence question 1 (sourceQuote): quotation is not a contiguous excerpt' },
+    { questions: [{ ...questions.questions[0], question: 'Private profile\nprovider detail?' }], diagnostic: 'Evidence question 1 (question): text contains a backslash or control character' },
+  ])('returns safe validation diagnostics atomically through the analysis API ($diagnostic)', async malformed => {
+    const { app, store, analyze, generate } = await fixture();
+    const before = store.state();
+    analyze.mockResolvedValue({ ...questions, questions: malformed.questions });
+    const result = await request(app).post('/api/evidence/analyze').send({ job });
+    expect(result.status).toBe(400);
+    expect(result.body.error).toContain(malformed.diagnostic);
+    expect(result.body.error).not.toContain('Private');
+    expect(result.body.reviewId).toBeUndefined();
+    expect(analyze).toHaveBeenCalledTimes(1);
+    expect(generate).not.toHaveBeenCalled();
+    expect(store.state()).toEqual(before);
+  });
+  it('returns safe envelope diagnostics without creating a review or mutating saved data', async () => {
+    const { store } = await fixture();
+    const before = store.state();
+    const fetcher = vi.fn(async () => new Response('<html>Private provider detail</html>', { headers: { 'content-type': 'text/html' } }));
+    const analyze = vi.fn((options: Parameters<typeof ai.analyzeEvidenceWithOpenRouter>[0]) => ai.analyzeEvidenceWithOpenRouter({ ...options, fetcher }));
+    const generate = vi.fn();
+    const app = createApp(store, { analyze, generate });
+    const result = await request(app).post('/api/evidence/analyze').send({ job });
+    expect(result.status).toBe(400);
+    expect(result.body.error).toContain('content type: text/html; body: malformed JSON');
+    expect(result.body.error).toContain('provider/server response error, not a model-generated JSON error');
+    expect(result.body.error).not.toContain('Private');
+    expect(result.body.reviewId).toBeUndefined();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(generate).not.toHaveBeenCalled();
+    expect(store.state()).toEqual(before);
   });
   it('requires configured OpenRouter for analysis and leaves data intact on analysis errors', async () => {
     const { app, store, analyze } = await fixture();
